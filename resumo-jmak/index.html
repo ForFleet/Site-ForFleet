@@ -41,7 +41,7 @@
   .panel-head h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 0; font-weight: 700; }
   .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 
-  textarea { width: 100%; min-height: 96px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 12px; font-family: var(--mono); font-size: 13px; color: var(--ink); background: var(--soft); word-break: break-all; }
+  textarea { display: block; width: 100%; min-height: 40px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; line-height: 1.45; overflow-y: auto; font-family: var(--mono); font-size: 13px; color: var(--ink); background: var(--soft); word-break: break-all; }
   textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; background: #fff; }
   .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
   .actions .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
@@ -211,7 +211,7 @@
 <main>
   <section class="panel">
     <h2>Insira o pacote</h2>
-    <textarea id="packet-input" spellcheck="false" placeholder="Cole aqui o pacote de telemetria..." aria-label="Pacote de telemetria"></textarea>
+    <textarea id="packet-input" rows="2" spellcheck="false" placeholder="Cole aqui o pacote de telemetria..." aria-label="Pacote de telemetria"></textarea>
     <div class="actions">
       <button class="btn primary" id="btn-analyze" type="button">Analisar pacote</button>
       <button class="btn" id="btn-clear" type="button">Limpar</button>
@@ -1195,9 +1195,19 @@ function analyze() {
   $('output').hidden = false;
 }
 
+const INPUT_MAX_HEIGHT = 200;
+
+// Ajusta a altura da caixa ao texto colado, sem cortar conteúdo; acima do limite, rola.
+function fitInput() {
+  const el = $('packet-input');
+  el.style.height = 'auto';
+  el.style.height = `${Math.min(el.scrollHeight + 2, INPUT_MAX_HEIGHT)}px`;
+}
+
 function clearAll() {
   current = null;
   $('packet-input').value = '';
+  fitInput();
   $('messages').innerHTML = '';
   $('output').hidden = true;
   $('packet-input').focus();
@@ -1243,13 +1253,16 @@ function downloadJson() {
 function init() {
   $('btn-analyze').addEventListener('click', analyze);
   $('btn-clear').addEventListener('click', clearAll);
-  $('btn-example').addEventListener('click', () => { $('packet-input').value = EXAMPLE_PACKET; analyze(); });
+  $('btn-example').addEventListener('click', () => { $('packet-input').value = EXAMPLE_PACKET; fitInput(); analyze(); });
+  $('packet-input').addEventListener('input', fitInput);
+  window.addEventListener('resize', fitInput);
   $('btn-copy-raw').addEventListener('click', (e) => current && copyText(current.packet.raw, e.currentTarget));
   $('btn-copy-summary').addEventListener('click', (e) => current && copyText(buildSummaryText(current.packet, current.metrics), e.currentTarget));
   $('btn-download-json').addEventListener('click', downloadJson);
   $('packet-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) analyze(); });
 
   $('packet-input').value = EXAMPLE_PACKET;
+  fitInput();
   analyze();
 }
 
