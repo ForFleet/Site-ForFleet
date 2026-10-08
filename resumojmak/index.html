@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analisador de Pacotes de Telemetria - JMAK</title>
+<style>
+  :root {
+    --bg: #EDF0F4;
+    --panel: #FFFFFF;
+    --ink: #131C2B;
+    --muted: #5B6879;
+    --line: #DAE0E8;
+    --soft: #F5F7FA;
+    --navy: #101A2A;
+    --accent: #0E6BA8;
+    --accent-dark: #0A517F;
+    --ok: #1E7B45;
+    --warn: #A86200;
+    --warn-bg: #FFF6E3;
+    --err: #B3261E;
+    --err-bg: #FDECEA;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+
+  .topbar { background: var(--navy); color: #fff; padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
+  .topbar .mark { width: 28px; height: 28px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; }
+  .topbar .mark svg { display: block; }
+  .topbar h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  .topbar span { color: #9FB0C6; font-size: 12px; margin-left: auto; font-family: var(--mono); }
+
+  main { max-width: 1240px; margin: 0 auto; padding: 20px 24px 48px; display: grid; gap: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; min-width: 0; }
+  .panel > h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 0 0 12px; font-weight: 700; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .panel-head h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 0; font-weight: 700; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+
+  textarea { width: 100%; min-height: 96px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 12px; font-family: var(--mono); font-size: 13px; color: var(--ink); background: var(--soft); word-break: break-all; }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; background: #fff; }
+  .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+  .actions .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .btn { font: inherit; font-weight: 600; font-size: 13px; padding: 9px 16px; border-radius: 6px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+  .btn:hover { border-color: #B7C2D0; background: var(--soft); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; text-transform: uppercase; letter-spacing: .6px; }
+  .btn.primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+  .btn.small { padding: 6px 11px; font-size: 12px; }
+
+  .msg { border-radius: var(--radius); padding: 12px 16px; border: 1px solid; }
+  .msg + .msg { margin-top: 8px; }
+  .msg strong { display: block; margin-bottom: 4px; }
+  .msg ul { margin: 0; padding-left: 18px; }
+  .msg.error { background: var(--err-bg); border-color: #F2B8B5; color: #7A1B15; }
+  .msg.warning { background: var(--warn-bg); border-color: #F0D49A; color: #6B4300; }
+  .msg.warning.has-error { border-color: #E9A39E; border-left: 4px solid var(--err); }
+  .msg.ok { background: #E7F5EC; border-color: #B5DFC4; color: #1B5E36; }
+  .alert-summary { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+  .alert-group + .alert-group { margin-top: 10px; }
+  .alert-group h4 { margin: 0 0 5px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; }
+  .msg .alert-group ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 5px; }
+  .alert-group li { display: flex; gap: 8px; align-items: baseline; color: var(--ink); }
+  .lv { flex: none; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 1px 8px; border-radius: 999px; border: 1px solid; }
+  .lv-error { color: var(--err); background: var(--err-bg); border-color: #F2B8B5; }
+  .lv-warn { color: #6B4300; background: #FFEFC7; border-color: #F0D49A; }
+  .lv-info { color: var(--muted); background: #fff; border-color: var(--line); }
+
+  #output { display: grid; gap: 16px; }
+  #output[hidden] { display: none; }
+
+  /* Identificação */
+  .identity { border-left: 4px solid var(--accent); display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; align-items: center; }
+  .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); font-weight: 700; }
+  .identity .big { font-family: var(--mono); font-size: 24px; font-weight: 600; letter-spacing: .5px; word-break: break-all; margin-top: 2px; }
+  .identity .meta { display: grid; gap: 8px; justify-items: start; }
+  .identity .meta .pair { font-size: 13px; color: var(--muted); }
+  .identity .meta .pair b { font-family: var(--mono); color: var(--ink); font-weight: 600; }
+  .badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .8px; border: 1px solid; }
+  .badge i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .badge.live { color: var(--ok); background: #E7F5EC; border-color: #B5DFC4; }
+  .badge.live i { animation: pulse 1.6s infinite; }
+  .badge.log { color: #6B4300; background: var(--warn-bg); border-color: #F0D49A; }
+  .badge.log i { border-radius: 2px; }
+  .badge.unknown { color: var(--muted); background: var(--soft); border-color: var(--line); }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(30,123,69,.5); } 100% { box-shadow: 0 0 0 8px rgba(30,123,69,0); } }
+  @media (prefers-reduced-motion: reduce) { .badge.live i { animation: none; } }
+
+  /* Cards do resumo */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .card { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; background: var(--soft); min-width: 0; }
+  .card .value { font-family: var(--mono); font-size: 18px; font-weight: 600; margin-top: 4px; word-break: break-word; }
+  .card .value.na { font-family: var(--sans); font-size: 13px; font-weight: 500; color: var(--muted); }
+  .card .sub { font-size: 11.5px; color: var(--muted); margin-top: 4px; font-family: var(--mono); word-break: break-word; }
+
+  /* Rota e flags */
+  .route { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .route .point { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+  .route .point div { font-family: var(--mono); font-size: 13px; }
+  .route .point span { color: var(--muted); display: inline-block; width: 34px; }
+  .route .point .addr { font-family: var(--sans); font-size: 13px; line-height: 1.4; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  .route .point .addr.na { color: var(--muted); font-style: italic; }
+  .minimap { height: 420px; margin-top: 12px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--soft); display: grid; place-items: center; color: var(--muted); font-size: 13px; text-align: center; padding: 0 12px; z-index: 0; }
+  .minimap.leaflet-container { display: block; padding: 0; font-family: var(--sans); }
+  .minimap.off { height: auto; padding: 22px 16px; border-style: dashed; font-style: italic; }
+  .map-pin { background: none; border: 0; }
+  .panel-compact { padding: 12px 20px; }
+  .flags-line { display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; }
+  .flags-line h2 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); font-weight: 700; }
+  .flags { display: flex; gap: 8px; flex-wrap: wrap; }
+  .flag { display: inline-flex; align-items: baseline; gap: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; background: var(--soft); }
+  .flag b { font-family: var(--mono); font-size: 15px; }
+  .flag small { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; }
+  .panel-compact .note { margin-top: 6px; }
+  .panel-compact .empty { padding: 6px 12px; }
+  .note { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+
+  /* Gráficos */
+  .stack { display: flex; height: 26px; border-radius: 5px; overflow: hidden; background: repeating-linear-gradient(135deg, #EEF1F5 0 6px, #E3E8EE 6px 12px); margin-bottom: 14px; }
+  .stack span { display: block; height: 100%; min-width: 2px; }
+  .bands { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+  .bands li { display: grid; grid-template-columns: 12px minmax(110px, 1.1fr) minmax(60px, 2fr) 84px 58px; gap: 10px; align-items: center; }
+  .bands .sw { width: 12px; height: 12px; border-radius: 3px; }
+  .bands .name { font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .3px; }
+  .bands .name small { color: var(--muted); font-weight: 500; font-family: var(--mono); margin-right: 6px; }
+  .bands .track { height: 10px; border-radius: 5px; background: #EEF1F5; overflow: hidden; }
+  .bands .fill { display: block; height: 100%; border-radius: 5px; }
+  .bands .time { font-family: var(--mono); text-align: right; font-size: 13px; }
+  .bands .pct { font-family: var(--mono); text-align: right; color: var(--muted); font-size: 12.5px; }
+  .bands li.absent { opacity: .5; }
+  .bands li.absent .time { font-family: var(--sans); font-size: 11.5px; }
+  .chart-foot { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+  .chart-foot b { font-family: var(--mono); }
+  .empty { border: 1px dashed var(--line); border-radius: 6px; padding: 22px 16px; text-align: center; color: var(--muted); background: var(--soft); }
+
+  /* Conferência */
+  .chk-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .chk-fact { border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; background: var(--soft); min-width: 0; }
+  .chk-fact .v { font-family: var(--mono); font-size: 20px; font-weight: 600; margin-top: 2px; }
+  .chk-fact .v.na { font-family: var(--sans); font-size: 13px; font-weight: 500; color: var(--muted); }
+  .chk-fact .v.alert { color: var(--warn); }
+  .chk-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .chk-group { border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; min-width: 0; }
+  .chk-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 10px; }
+  .chk-bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: repeating-linear-gradient(135deg, #FBE9C3 0 5px, #F3D69C 5px 10px); }
+  .chk-bar .done { display: block; height: 100%; background: var(--ok); }
+  .chk-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin: 6px 0 12px; }
+  .chk-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .chk-legend i.done { background: var(--ok); }
+  .chk-legend i.rest { background: repeating-linear-gradient(135deg, #FBE9C3 0 3px, #F3D69C 3px 6px); border: 1px solid #E8C47C; }
+  .chk-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 4px 8px; align-items: baseline; padding: 9px 10px; border-radius: 5px; }
+  .chk-row + .chk-row { margin-top: 6px; }
+  .chk-row .ic { font-weight: 700; text-align: center; }
+  .chk-row .lbl { font-size: 13.5px; }
+  .chk-row .val { font-family: var(--mono); font-size: 16px; font-weight: 600; text-align: right; }
+  .chk-row .sub { grid-column: 2 / 4; font-size: 12px; color: var(--muted); }
+  .chk-row.counted { background: var(--soft); }
+  .chk-row.counted .ic { color: var(--ok); }
+  .chk-row.uncounted { background: var(--warn-bg); }
+  .chk-row.uncounted .ic, .chk-row.uncounted .val { color: var(--warn); }
+  .chk-row.over { background: var(--err-bg); }
+  .chk-row.over .ic, .chk-row.over .val { color: var(--err); }
+  .chk-row.na .val { font-family: var(--sans); font-size: 13px; font-weight: 500; color: var(--muted); }
+  .chk-row.na .ic { color: var(--muted); }
+  .chk-eq { margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .chk-eq b { font-family: var(--mono); color: var(--ink); font-weight: 600; }
+
+  /* Pacote e tabela técnica */
+  .raw { font-family: var(--mono); font-size: 13px; background: var(--navy); color: #D7E3F2; padding: 14px 16px; border-radius: 6px; word-break: break-all; margin: 0; white-space: pre-wrap; }
+  .raw .sep { color: #5F7896; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); padding: 8px 10px; border-bottom: 2px solid var(--line); white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.idx, th.idx { text-align: right; font-family: var(--mono); color: var(--muted); width: 56px; }
+  td.rawv { font-family: var(--mono); word-break: break-all; }
+  tr.st-undefined td.interp, tr.st-absent td.interp { color: var(--muted); font-style: italic; }
+  tr.st-missing td.interp, tr.st-invalid td.interp { color: var(--err); font-weight: 600; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 20px 0 8px; }
+
+  @media (max-width: 900px) {
+    .grid-2, .identity, .chk-groups { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 560px) {
+    main { padding: 14px 12px 36px; }
+    .topbar { padding: 12px; }
+    .topbar span { display: none; }
+    .identity .big { font-size: 19px; }
+    .route, .chk-facts { grid-template-columns: 1fr; }
+    .minimap { height: 280px; }
+    .bands li { grid-template-columns: 12px 1fr 78px 52px; }
+    .bands .track { display: none; }
+    .actions .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="mark" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M1 9h3l2-6 3 10 2-4h4"/></svg>
+  </div>
+  <h1>Analisador de Pacotes de Telemetria - JMAK</h1>
+  <span>Resumo de viagem · horário de Brasília (UTC-3)</span>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Insira o pacote</h2>
+    <textarea id="packet-input" spellcheck="false" placeholder="Cole aqui o pacote de telemetria..." aria-label="Pacote de telemetria"></textarea>
+    <div class="actions">
+      <button class="btn primary" id="btn-analyze" type="button">Analisar pacote</button>
+      <button class="btn" id="btn-clear" type="button">Limpar</button>
+      <button class="btn" id="btn-example" type="button">Carregar exemplo</button>
+      <span class="hint">Ctrl + Enter também analisa</span>
+    </div>
+  </section>
+
+  <div id="messages" aria-live="polite"></div>
+
+  <div id="output" hidden>
+    <section class="panel identity" id="sec-identity"></section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Resumo da viagem</h2>
+        <div class="actions" style="margin:0">
+          <button class="btn small" id="btn-copy-summary" type="button">Copiar resumo</button>
+          <button class="btn small" id="btn-download-json" type="button">Baixar JSON</button>
+        </div>
+      </div>
+      <div class="cards" id="sec-summary"></div>
+    </section>
+
+    <section class="panel" id="sec-route"></section>
+
+    <div class="grid-2">
+      <section class="panel">
+        <h2>Distribuição de RPM</h2>
+        <div id="rpm-chart"></div>
+      </section>
+      <section class="panel">
+        <h2>Distribuição de velocidade</h2>
+        <div id="speed-chart"></div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>Conferência de tempos e eventos</h2>
+      <div id="sec-checks"></div>
+    </section>
+
+    <section class="panel panel-compact" id="sec-flags"></section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Pacote recebido</h2>
+        <button class="btn small" id="btn-copy-raw" type="button">Copiar string</button>
+      </div>
+      <pre class="raw" id="sec-raw"></pre>
+    </section>
+
+    <section class="panel">
+      <h2>Dados decodificados</h2>
+      <div id="sec-technical"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+'use strict';
+
+/* =====================================================================
+   1. DEFINIÇÕES DO PROTOCOLO
+   Para alterar o significado de um campo ou evento, edite apenas este bloco.
+   Tipos de campo disponíveis: mask, text, integer, number, enum, timestamp,
+   latitude, longitude, flags, events.
+   ===================================================================== */
+
+const EXAMPLE_PACKET = '00000000001FFFFF;868695063049041;202605-00141-0045241;60726;0;0;1791406733142;1791411350484;-15.51821;-15.73132;-48.23836;-48.08971;1111;261922.23;261967.42;642.35;643.62;194631.83;194685.83;12;24:83,21:2214,22:1793,23:419,1:126,2:83,3:2931,4:1133,5:327,6:0,7:0,8:0;53.56;';
+
+const TZ_OFFSET_HOURS = -3; // horário de Brasília
+
+const FIELD_DEFINITIONS = {
+  0:  { key: 'mask',       name: 'Máscara',                             type: 'mask' },
+  1:  { key: 'imei',       name: 'IMEI',                                type: 'text' },
+  2:  { key: 'serial',     name: 'Número de série',                     type: 'text' },
+  3:  { key: 'tripId',     name: 'ID da viagem',                        type: 'integer' },
+  4:  { key: 'backup',     name: 'Backup (tipo de chegada)',            type: 'enum',
+        values: { 0: 'Tempo real', 1: 'Log' }, styles: { 0: 'live', 1: 'log' } },
+  5:  { key: 'driverId',   name: 'ID do motorista',                     type: 'text' },
+  6:  { key: 'tsStart',    name: 'Timestamp início (epoch ms)',         type: 'timestamp' },
+  7:  { key: 'tsEnd',      name: 'Timestamp fim (epoch ms)',            type: 'timestamp' },
+  8:  { key: 'latStart',   name: 'Latitude inicial',                    type: 'latitude' },
+  9:  { key: 'latEnd',     name: 'Latitude final',                      type: 'latitude' },
+  10: { key: 'lonStart',   name: 'Longitude inicial',                   type: 'longitude' },
+  11: { key: 'lonEnd',     name: 'Longitude final',                     type: 'longitude' },
+  12: { key: 'flags',      name: 'Flags (string de sinais / bits)',     type: 'flags' },
+  13: { key: 'odoStart',   name: 'Odômetro inicial',                    type: 'number', unit: 'km' },
+  14: { key: 'odoEnd',     name: 'Odômetro final',                      type: 'number', unit: 'km' },
+  15: { key: 'hourStart',  name: 'Horímetro inicial',                   type: 'number', unit: 'h' },
+  16: { key: 'hourEnd',    name: 'Horímetro final',                     type: 'number', unit: 'h' },
+  17: { key: 'fuelStart',  name: 'Consumo inicial',                     type: 'number', unit: 'L' },
+  18: { key: 'fuelEnd',    name: 'Consumo final',                       type: 'number', unit: 'L' },
+  19: { key: 'eventCount', name: 'Quantidade de eventos customizáveis', type: 'integer' },
+  20: { key: 'events',     name: 'Eventos customizáveis',               type: 'events' },
+  21: { key: 'tripFuel',   name: 'Combustível calculado na viagem',     type: 'number', unit: 'L', required: false }
+};
+
+const EVENT_GROUPS = {
+  rpm:   { title: 'Faixas de RPM',        short: 'RPM',        range: 'eventos 1 a 8' },
+  speed: { title: 'Faixas de velocidade', short: 'Velocidade', range: 'eventos 21 a 24' }
+};
+
+// Todos os valores de evento são tempo acumulado em segundos.
+const EVENT_DEFINITIONS = {
+  1:  { name: 'Marcha lenta',         group: 'rpm',   color: '#8B95A1' },
+  2:  { name: 'RPM baixo',            group: 'rpm',   color: '#C2920A' },
+  3:  { name: 'Econômica',            group: 'rpm',   color: '#1E7B45' },
+  4:  { name: 'Extra econômica',      group: 'rpm',   color: '#7CCB6B' },
+  5:  { name: 'RPM alto',             group: 'rpm',   color: '#F08A24' },
+  6:  { name: 'Violação de RPM',      group: 'rpm',   color: '#7B1E3A' },
+  7:  { name: 'Movimento sem tração', group: 'rpm',   color: '#A31515' },
+  8:  { name: 'Parado acelerando',    group: 'rpm',   color: '#E5352B' },
+  21: { name: 'Baixa',                group: 'speed', color: '#2F7FD8' },
+  22: { name: 'Média',                group: 'speed', color: '#2EA05A' },
+  23: { name: 'Alta',                 group: 'speed', color: '#F08A24' },
+  24: { name: 'Violação',             group: 'speed', color: '#E5352B' }
+};
+
+// Serviço de endereço (geocodificação reversa). Exige internet; sem ela, só as coordenadas aparecem.
+const ADDRESS_SERVICE = 'https://nominatim.openstreetmap.org/reverse';
+const ADDRESS_TIMEOUT_MS = 10000;
+const ADDRESS_INTERVAL_MS = 1100; // o serviço aceita no máximo 1 consulta por segundo
+
+// Mini mapa: biblioteca Leaflet + imagens do OpenStreetMap + rota sugerida pelo OSRM. Tudo gratuito e sem chave; exige internet.
+const LEAFLET_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
+// Fontes das imagens do mapa, em ordem de tentativa: se uma for bloqueada, a próxima assume sozinha.
+const OSM_CREDIT = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
+const MAP_TILE_SOURCES = [
+  { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', maxZoom: 19,
+    attribution: 'Imagens &copy; Esri' },
+  { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19, attribution: OSM_CREDIT }
+];
+const ROUTE_SERVICE = 'https://router.project-osrm.org/route/v1/driving/';
+const MAP_TIMEOUT_MS = 15000;
+const PIN_COLORS = { origin: '#1E7B45', destination: '#B3261E' };
+
+const ALERT_CATEGORIES = {
+  fields: 'Campos não enviados',
+  events: 'Eventos customizados (campo 19 × campo 20)',
+  timing: 'Eventos × duração do pacote (campos 6 e 7)',
+  values: 'Valores inconsistentes'
+};
+
+const ALERT_LEVELS = {
+  error:   { label: 'Inconsistência', plural: 'Inconsistências', cls: 'lv-error' },
+  warning: { label: 'Atenção',        plural: 'Atenções',        cls: 'lv-warn' },
+  info:    { label: 'Informativo',    plural: 'Informativos',    cls: 'lv-info' }
+};
+
+const INSUFFICIENT = 'Informação insuficiente para cálculo.';
+const UNDEFINED_FIELD = 'Campo não definido';
+
+/* =====================================================================
+   2. FORMATAÇÃO E CÁLCULO
+   ===================================================================== */
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function toNumber(raw) {
+  return /^-?\d+(\.\d+)?$/.test(String(raw).trim()) ? Number(raw) : NaN;
+}
+
+function formatNumber(n, decimals) {
+  const d = decimals === undefined ? 2 : decimals;
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+function formatPercent(part, total) {
+  if (!(total > 0)) return '—';
+  return formatNumber((part / total) * 100, 1) + '%';
+}
+
+// Conversão central de segundos: hh:mm:ss, ou "27h 15min 32s" a partir de 24 h.
+function formatSeconds(totalSeconds) {
+  if (!Number.isFinite(totalSeconds)) return '—';
+  const negative = totalSeconds < 0;
+  const s = Math.round(Math.abs(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const text = h >= 24 ? `${h}h ${pad2(m)}min ${pad2(sec)}s` : `${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
+  return (negative && s > 0 ? '-' : '') + text;
+}
+
+// Epoch em milissegundos -> DD/MM/AAAA HH:mm:ss no horário de Brasília.
+function formatTimestamp(ms) {
+  if (!Number.isFinite(ms)) return null;
+  const d = new Date(ms + TZ_OFFSET_HOURS * 3600000);
+  if (isNaN(d.getTime())) return null;
+  return `${pad2(d.getUTCDate())}/${pad2(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ` +
+         `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())}`;
+}
+
+function calculateDuration(startMs, endMs) {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return { ok: false, reason: INSUFFICIENT };
+  if (endMs < startMs) return { ok: false, reason: 'Timestamp final anterior ao inicial.' };
+  return { ok: true, seconds: (endMs - startMs) / 1000 };
+}
+
+// Diferença final - inicial entre dois campos numéricos já decodificados.
+function calculateDelta(startField, endField) {
+  if (!startField || !endField || startField.status !== 'ok' || endField.status !== 'ok') {
+    return { ok: false, reason: INSUFFICIENT };
+  }
+  const delta = endField.value - startField.value;
+  if (delta < 0) return { ok: false, reason: 'Valor final menor que o inicial.' };
+  return { ok: true, value: delta };
+}
+
+/* =====================================================================
+   3. DECODIFICAÇÃO
+   ===================================================================== */
+
+const invalid = (message) => ({ status: 'invalid', display: 'Valor inválido', message });
+
+const FIELD_DECODERS = {
+  text: (raw) => ({ value: raw, display: raw }),
+  mask: (raw) => ({ value: raw, display: raw }),
+
+  integer: (raw, def, i) => /^-?\d+$/.test(raw)
+    ? { value: Number(raw), display: raw }
+    : invalid(`Campo ${i} (${def.name}): era esperado um número inteiro, recebido "${raw}".`),
+
+  number: (raw, def, i) => {
+    const n = toNumber(raw);
+    if (!Number.isFinite(n)) return invalid(`Campo ${i} (${def.name}): valor não numérico "${raw}".`);
+    return { value: n, display: `${formatNumber(n)}${def.unit ? ' ' + def.unit : ''}` };
+  },
+
+  enum: (raw, def, i) => Object.prototype.hasOwnProperty.call(def.values, raw)
+    ? { value: raw, display: def.values[raw] }
+    : invalid(`Campo ${i} (${def.name}): valor "${raw}" não previsto (esperado: ${Object.keys(def.values).join(' ou ')}).`),
+
+  timestamp: (raw, def, i) => {
+    if (!/^\d+$/.test(raw)) return invalid(`Campo ${i} (${def.name}): timestamp inválido "${raw}".`);
+    const ms = Number(raw);
+    const text = formatTimestamp(ms);
+    if (!text) return invalid(`Campo ${i} (${def.name}): timestamp inválido "${raw}".`);
+    const year = new Date(ms).getUTCFullYear();
+    const out = { value: ms, display: text };
+    if (year < 2000 || year > 2100) {
+      out.message = `Campo ${i} (${def.name}): a data resultante (${text}) está fora do intervalo esperado para epoch em milissegundos.`;
+    }
+    return out;
+  },
+
+  latitude:  (raw, def, i) => decodeCoordinate(raw, def, i, 90),
+  longitude: (raw, def, i) => decodeCoordinate(raw, def, i, 180),
+
+  flags: (raw, def, i) => /^[01]+$/.test(raw)
+    ? { value: raw.split(''), display: `${raw.length} sinais: ${raw.split('').join(' ')}` }
+    : invalid(`Campo ${i} (${def.name}): era esperada uma sequência de 0 e 1, recebido "${raw}".`),
+
+  events: (raw) => {
+    const count = raw.split(',').filter((t) => t.trim() !== '').length;
+    return { value: raw, display: `${count} evento(s) no pacote` };
+  }
+};
+
+function decodeCoordinate(raw, def, i, limit) {
+  const n = toNumber(raw);
+  if (!Number.isFinite(n)) return invalid(`Campo ${i} (${def.name}): coordenada não numérica "${raw}".`);
+  if (Math.abs(n) > limit) return invalid(`Campo ${i} (${def.name}): coordenada fora do intervalo (±${limit}°).`);
+  return { value: n, display: `${raw}°` };
+}
+
+function decodeField(index, raw) {
+  const def = FIELD_DEFINITIONS[index] || null;
+  const field = { index, raw: raw === undefined ? '' : raw, def, name: def ? def.name : UNDEFINED_FIELD,
+                  value: null, display: 'Não definido', status: def ? 'ok' : 'undefined', message: null };
+  if (!def) return field;
+
+  if (raw === undefined || raw === '') {
+    if (def.required === false) {
+      field.status = 'absent';
+      field.display = 'Não enviado (campo opcional)';
+    } else {
+      field.status = 'missing';
+      field.display = 'Campo ausente';
+      field.message = `Pacote incompleto: o campo ${index} (${def.name}) não foi encontrado.`;
+    }
+    return field;
+  }
+
+  const decoder = FIELD_DECODERS[def.type] || FIELD_DECODERS.text;
+  return Object.assign(field, decoder(raw, def, index));
+}
+
+function parseEvents(blob) {
+  const result = { list: [], warnings: [] };
+  if (blob === undefined || blob.trim() === '') return result;
+  const seen = new Set();
+
+  blob.split(',').forEach((token) => {
+    const text = token.trim();
+    if (text === '') {
+      result.warnings.push('Evento vazio encontrado no campo 20 (vírgula sobrando) e ignorado.');
+      return;
+    }
+    const match = /^(\d+):(\d+(?:\.\d+)?)$/.exec(text);
+    if (!match) {
+      result.warnings.push(`Evento malformado ignorado: "${text}" (formato esperado EVENTO:VALOR, com valor numérico não negativo).`);
+      result.list.push({ id: null, rawToken: text, valid: false, reason: 'Malformado' });
+      return;
+    }
+    const id = Number(match[1]);
+    if (seen.has(id)) {
+      result.warnings.push(`Evento ${id} repetido no pacote: apenas a primeira ocorrência foi considerada.`);
+      result.list.push({ id, rawToken: text, valid: false, reason: 'Repetido' });
+      return;
+    }
+    seen.add(id);
+    result.list.push({ id, rawToken: text, seconds: Number(match[2]), valid: true, def: EVENT_DEFINITIONS[id] || null });
+  });
+  return result;
+}
+
+function parsePacket(input) {
+  const packet = { raw: '', parts: [], fields: [], byKey: {}, events: { list: [], warnings: [] }, errors: [], warnings: [] };
+  const raw = String(input === undefined || input === null ? '' : input).replace(/[\r\n\t]+/g, '').trim();
+
+  if (!raw) {
+    packet.errors.push('Nenhum pacote informado. Cole a string de telemetria no campo acima.');
+    return packet;
+  }
+  packet.raw = raw;
+  if (!raw.includes(';')) {
+    packet.errors.push('Separador ";" não encontrado. O pacote deve ter os campos separados por ponto e vírgula.');
+    return packet;
+  }
+
+  const parts = raw.split(';').map((p) => p.trim());
+  if (parts[parts.length - 1] === '') parts.pop(); // ";" final do pacote
+  packet.parts = parts;
+
+  const definedCount = Math.max(...Object.keys(FIELD_DEFINITIONS).map(Number)) + 1;
+  const total = Math.max(parts.length, definedCount);
+  for (let i = 0; i < total; i++) {
+    const field = decodeField(i, parts[i]);
+    packet.fields.push(field);
+    if (field.def) packet.byKey[field.def.key] = field;
+    if (field.message) packet.warnings.push(field.message);
+  }
+  if (parts.length > definedCount) {
+    packet.warnings.push(`O pacote tem ${parts.length - definedCount} campo(s) além dos documentados; eles aparecem como "Não definido".`);
+  }
+
+  packet.events = parseEvents(parts[20]);
+  packet.warnings.push(...packet.events.warnings);
+  return packet;
+}
+
+// Indicadores derivados dos campos documentados. Nada é estimado: sem dado, sem cálculo.
+function computeMetrics(packet) {
+  const k = packet.byKey;
+  const value = (key) => (k[key] && k[key].status === 'ok' ? k[key].value : NaN);
+  const m = { warnings: [], groups: {} };
+
+  m.duration = calculateDuration(value('tsStart'), value('tsEnd'));
+  m.distance = calculateDelta(k.odoStart, k.odoEnd);
+  m.engineHours = calculateDelta(k.hourStart, k.hourEnd);
+  m.fuel = calculateDelta(k.fuelStart, k.fuelEnd);
+  // Consumo acumulado (final - inicial) menos o combustível calculado na viagem (campo 21).
+  m.fuelDiff = m.fuel.ok && k.tripFuel && k.tripFuel.status === 'ok'
+    ? { ok: true, value: m.fuel.value - k.tripFuel.value }
+    : { ok: false, reason: INSUFFICIENT };
+
+  const valid = packet.events.list.filter((e) => e.valid);
+  Object.keys(EVENT_GROUPS).forEach((groupId) => {
+    const bands = Object.keys(EVENT_DEFINITIONS).map(Number)
+      .filter((id) => EVENT_DEFINITIONS[id].group === groupId)
+      .map((id) => {
+        const ev = valid.find((e) => e.id === id);
+        const def = EVENT_DEFINITIONS[id];
+        return { id, name: def.name, color: def.color, present: !!ev, seconds: ev ? ev.seconds : 0 };
+      });
+    const present = bands.some((b) => b.present);
+    const total = bands.reduce((sum, b) => sum + b.seconds, 0);
+    const unaccounted = present && m.duration.ok
+      ? { ok: true, seconds: m.duration.seconds - total }
+      : { ok: false, reason: INSUFFICIENT };
+    m.groups[groupId] = Object.assign({ id: groupId, bands, present, total, unaccounted }, EVENT_GROUPS[groupId]);
+  });
+
+  m.otherEvents = valid.filter((e) => !e.def);
+  m.receivedCount = valid.length;
+  m.discardedCount = packet.events.list.length - valid.length;
+  m.declaredCount = k.eventCount && k.eventCount.status === 'ok' ? k.eventCount.value : null;
+
+  if (m.declaredCount !== null && m.declaredCount !== packet.events.list.length) {
+    m.warnings.push(`O campo 19 declara ${m.declaredCount} evento(s) customizável(is), mas o campo 20 contém ${packet.events.list.length}.`);
+  }
+  if (m.duration.reason && m.duration.reason !== INSUFFICIENT) m.warnings.push(`Duração não calculada: ${m.duration.reason}`);
+  [['distance', 'Distância (odômetro)'], ['engineHours', 'Horímetro'], ['fuel', 'Consumo']].forEach(([key, label]) => {
+    if (m[key].reason && m[key].reason !== INSUFFICIENT) m.warnings.push(`${label}: ${m[key].reason.toLowerCase()} Diferença não calculada.`);
+  });
+  if (m.otherEvents.length) {
+    m.warnings.push(`Evento(s) sem definição no decodificador: ${m.otherEvents.map((e) => e.id).join(', ')}. Eles aparecem como "Não definido" na tabela de eventos.`);
+  }
+  return m;
+}
+
+/* =====================================================================
+   4. EXPORTAÇÃO
+   ===================================================================== */
+
+// Reúne todos os alertas do pacote, cada um com categoria e nível.
+function collectAlerts(packet, m) {
+  const alerts = [];
+  const add = (category, level, text) => alerts.push({ category, level, text });
+  const C = ALERT_CATEGORIES;
+
+  // Campos ausentes, opcionais não enviados e valores inválidos.
+  packet.fields.forEach((f) => {
+    if (f.status === 'missing') add(C.fields, 'error', `Campo ${f.index} · ${f.name}: não enviado.`);
+    else if (f.status === 'absent') add(C.fields, 'info', `Campo ${f.index} · ${f.name}: não enviado (campo opcional).`);
+    else if (f.status === 'invalid') add(C.values, 'error', f.message);
+    else if (f.message) add(C.values, 'warning', f.message);
+  });
+  const definedCount = Math.max(...Object.keys(FIELD_DEFINITIONS).map(Number)) + 1;
+  if (packet.parts.length > definedCount) {
+    add(C.fields, 'info', `${packet.parts.length - definedCount} campo(s) além dos documentados (índice ${definedCount} em diante); aparecem como "Não definido".`);
+  }
+
+  // Campo 19 (quantidade declarada) × campo 20 (eventos recebidos).
+  // Se o campo 19 não veio, a ausência já é apontada em "Campos não enviados".
+  const sent = packet.events.list.length;
+  if (m.declaredCount !== null && m.declaredCount !== sent) {
+    const diff = sent - m.declaredCount;
+    add(C.events, 'error', `Campo 19 declara ${m.declaredCount} evento(s), mas o campo 20 traz ${sent} (${diff < 0 ? 'faltam' : 'sobram'} ${Math.abs(diff)}).`);
+  }
+  packet.events.warnings.forEach((w) => add(C.events, 'warning', w));
+  if (m.otherEvents.length) {
+    add(C.events, 'warning', `Evento(s) sem definição no decodificador: ${m.otherEvents.map((e) => e.id).join(', ')}.`);
+  }
+
+  // Tempo dos eventos × duração do pacote: só aponta quando os eventos ULTRAPASSAM a duração.
+  // Tempo sem evento é normal (ex.: veículo em meia chave antes da operação) e não gera alerta.
+  if (!m.duration.ok) {
+    if (m.duration.reason !== INSUFFICIENT) add(C.values, 'error', `${m.duration.reason} Duração não calculada.`);
+  } else {
+    const dur = m.duration.seconds;
+    Object.values(m.groups).forEach((g) => {
+      if (!g.present) return;
+      g.bands.filter((b) => b.present && b.seconds > dur + 0.5).forEach((b) => {
+        add(C.timing, 'error', `Evento ${b.id} (${b.name}) soma ${formatSeconds(b.seconds)}, mais que a duração do pacote (${formatSeconds(dur)}).`);
+      });
+      const u = g.unaccounted.seconds;
+      if (u < -0.5) {
+        add(C.timing, 'error', `${g.title}: a soma dos eventos (${formatSeconds(g.total)}) excede a duração do pacote (${formatSeconds(dur)}) em ${formatSeconds(-u)}.`);
+      }
+    });
+  }
+
+  // Leituras finais menores que as iniciais.
+  [['distance', 'Odômetro (campos 13 e 14)'], ['engineHours', 'Horímetro (campos 15 e 16)'], ['fuel', 'Consumo (campos 17 e 18)']].forEach(([key, label]) => {
+    if (m[key].reason && m[key].reason !== INSUFFICIENT) add(C.values, 'error', `${label}: valor final menor que o inicial. Diferença não calculada.`);
+  });
+
+  return alerts;
+}
+
+function describeUnaccounted(u) {
+  if (!u.ok) return u.reason;
+  if (u.seconds > 0.5) return `${formatSeconds(u.seconds)} não contabilizado`;
+  if (u.seconds < -0.5) return `eventos excedem a duração em ${formatSeconds(-u.seconds)}`;
+  return 'Sem diferença';
+}
+
+function formatSignedLiters(r) {
+  if (!r.ok) return r.reason;
+  return `${r.value > 0 ? '+' : ''}${formatNumber(r.value)} L`;
+}
+
+function buildSummaryText(packet, m) {
+  const k = packet.byKey;
+  const show = (key) => (k[key] ? k[key].display : '—');
+  const lines = [
+    'RESUMO DA VIAGEM',
+    `IMEI: ${show('imei')}`,
+    `Número de série: ${show('serial')}`,
+    `ID da viagem: ${show('tripId')}`,
+    `ID do motorista: ${show('driverId')}`,
+    `Tipo de pacote: ${show('backup')}`,
+    `Início: ${show('tsStart')}`,
+    `Fim: ${show('tsEnd')}`,
+    `Duração: ${m.duration.ok ? formatSeconds(m.duration.seconds) : m.duration.reason}`,
+    `Origem: ${show('latStart')}, ${show('lonStart')}`,
+    `Destino: ${show('latEnd')}, ${show('lonEnd')}`,
+    `Distância (odômetro): ${m.distance.ok ? formatNumber(m.distance.value) + ' km' : m.distance.reason}`,
+    `Horímetro: ${m.engineHours.ok ? formatNumber(m.engineHours.value) + ' h' : m.engineHours.reason}`,
+    `Consumo acumulado: ${m.fuel.ok ? formatNumber(m.fuel.value) + ' L' : m.fuel.reason}`,
+    `Combustível calculado na viagem: ${show('tripFuel')}`,
+    `Diferença de consumo (acumulado − calculado): ${formatSignedLiters(m.fuelDiff)}`
+  ];
+  Object.values(m.groups).forEach((g) => {
+    lines.push('', g.title.toUpperCase());
+    if (!g.present) { lines.push('Nenhum evento desta faixa no pacote.'); return; }
+    g.bands.filter((b) => b.present).forEach((b) => {
+      lines.push(`${b.name}: ${formatSeconds(b.seconds)} (${formatPercent(b.seconds, g.total)})`);
+    });
+    lines.push(`Total contabilizado: ${formatSeconds(g.total)}`);
+    lines.push(`Diferença para a duração: ${describeUnaccounted(g.unaccounted)}`);
+  });
+  lines.push('', 'PACOTE', packet.raw);
+  return lines.join('\n');
+}
+
+function buildExportObject(packet, m) {
+  const result = (r, unit) => (r.ok ? { valor: r.value, unidade: unit } : { valor: null, motivo: r.reason });
+  return {
+    pacote: packet.raw,
+    campos: packet.fields.map((f) => ({ indice: f.index, campo: f.name, valorBruto: f.raw, interpretacao: f.display, situacao: f.status })),
+    eventos: packet.events.list.map((e) => ({
+      evento: e.id, valorBruto: e.rawToken, valido: e.valid,
+      faixa: e.valid ? (e.def ? e.def.name : 'Não definido') : e.reason,
+      segundos: e.valid ? e.seconds : null, tempo: e.valid ? formatSeconds(e.seconds) : null
+    })),
+    resumo: {
+      duracaoSegundos: m.duration.ok ? m.duration.seconds : null,
+      duracao: m.duration.ok ? formatSeconds(m.duration.seconds) : m.duration.reason,
+      distancia: result(m.distance, 'km'),
+      horimetro: result(m.engineHours, 'h'),
+      consumo: result(m.fuel, 'L'),
+      diferencaConsumo: result(m.fuelDiff, 'L'),
+      eventosDeclarados: m.declaredCount,
+      eventosRecebidos: m.receivedCount,
+      faixas: Object.values(m.groups).map((g) => ({
+        grupo: g.title, presente: g.present, totalSegundos: g.present ? g.total : null,
+        diferencaParaDuracao: describeUnaccounted(g.unaccounted),
+        itens: g.bands.filter((b) => b.present).map((b) => ({
+          evento: b.id, faixa: b.name, segundos: b.seconds, tempo: formatSeconds(b.seconds), percentual: formatPercent(b.seconds, g.total)
+        }))
+      }))
+    },
+    avisos: collectAlerts(packet, m).map((a) => ({ categoria: a.category, nivel: ALERT_LEVELS[a.level].label, texto: a.text }))
+  };
+}
+
+/* =====================================================================
+   5. INTERFACE
+   ===================================================================== */
+
+let current = null; // { packet, metrics } da última análise
+
+const $ = (id) => document.getElementById(id);
+
+function esc(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+const display = (field) => (field ? field.display : '—');
+
+function renderAlerts(alerts) {
+  const count = (level) => alerts.filter((a) => a.level === level).length;
+  const errors = count('error');
+  const relevant = errors + count('warning');
+  const chips = Object.keys(ALERT_LEVELS).filter((lv) => count(lv))
+    .map((lv) => `<span class="lv ${ALERT_LEVELS[lv].cls}">${count(lv)} ${esc(count(lv) > 1 ? ALERT_LEVELS[lv].plural : ALERT_LEVELS[lv].label)}</span>`).join('');
+  const groups = Object.values(ALERT_CATEGORIES).map((cat) => {
+    const items = alerts.filter((a) => a.category === cat);
+    if (!items.length) return '';
+    return `<div class="alert-group"><h4>${esc(cat)}</h4><ul>${items.map((a) =>
+      `<li><span class="lv ${ALERT_LEVELS[a.level].cls}">${esc(ALERT_LEVELS[a.level].label)}</span><span>${esc(a.text)}</span></li>`).join('')}</ul></div>`;
+  }).join('');
+
+  $('messages').innerHTML = relevant
+    ? `<div class="msg warning${errors ? ' has-error' : ''}"><strong>⚠️ ${relevant} ponto(s) de atenção neste pacote</strong>
+        <div class="alert-summary">${chips}</div>${groups}</div>`
+    : `<div class="msg ok"><strong>✓ Nenhuma inconsistência encontrada neste pacote</strong>${groups}</div>`;
+}
+
+function renderMessages(errors, warnings) {
+  let html = '';
+  if (errors.length) {
+    html += `<div class="msg error"><strong>⚠️ Não foi possível analisar o pacote</strong><ul>${errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul></div>`;
+  }
+  if (warnings.length) {
+    html += `<div class="msg warning"><strong>⚠️ ${warnings.length} ponto(s) de atenção neste pacote</strong><ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div>`;
+  }
+  $('messages').innerHTML = html;
+}
+
+function renderIdentity(packet) {
+  const k = packet.byKey;
+  const type = k.backup;
+  const style = type && type.status === 'ok' ? type.def.styles[type.value] : 'unknown';
+  const typeText = type && type.status === 'ok' ? type.display.toUpperCase() : display(type);
+  $('sec-identity').innerHTML = `
+    <div><div class="label">IMEI</div><div class="big">${esc(display(k.imei))}</div></div>
+    <div><div class="label">Número de série</div><div class="big">${esc(display(k.serial))}</div></div>
+    <div class="meta">
+      <div><div class="label" style="margin-bottom:5px">Tipo de pacote</div><span class="badge ${style}"><i></i>${esc(typeText)}</span></div>
+      <div class="pair">ID da viagem <b>${esc(display(k.tripId))}</b> &nbsp;·&nbsp; ID do motorista <b>${esc(display(k.driverId))}</b></div>
+    </div>`;
+}
+
+function card(label, value, sub, isNa) {
+  return `<div class="card"><div class="label">${esc(label)}</div>
+    <div class="value${isNa ? ' na' : ''}">${esc(value)}</div>
+    ${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>`;
+}
+
+function deltaCard(label, result, unit, startField, endField, extra) {
+  const sub = `${display(startField)} → ${display(endField)}`;
+  if (!result.ok) return card(label, result.reason, sub, true);
+  return card(label, `${formatNumber(result.value)} ${unit}`, extra ? `${sub} · ${extra}` : sub, false);
+}
+
+function renderSummary(packet, m) {
+  const k = packet.byKey;
+  const ok = (f) => f && f.status === 'ok';
+  const hoursExtra = m.engineHours.ok ? `≈ ${formatSeconds(m.engineHours.value * 3600)}` : '';
+  $('sec-summary').innerHTML = [
+    card('Início', display(k.tsStart), '', !ok(k.tsStart)),
+    card('Fim', display(k.tsEnd), '', !ok(k.tsEnd)),
+    card('Duração', m.duration.ok ? formatSeconds(m.duration.seconds) : m.duration.reason, m.duration.ok ? 'fim − início' : '', !m.duration.ok),
+    deltaCard('Distância (odômetro)', m.distance, 'km', k.odoStart, k.odoEnd),
+    deltaCard('Horímetro', m.engineHours, 'h', k.hourStart, k.hourEnd, hoursExtra),
+    deltaCard('Consumo acumulado', m.fuel, 'L', k.fuelStart, k.fuelEnd),
+    card('Consumo calculado - JMAK', display(k.tripFuel), 'campo 21 (opcional)', !ok(k.tripFuel)),
+    card('Diferença de consumo', formatSignedLiters(m.fuelDiff), 'acumulado − calculado', !m.fuelDiff.ok)
+  ].join('');
+}
+
+function renderRoute(packet) {
+  const k = packet.byKey;
+  const coords = [k.latStart, k.lonStart, k.latEnd, k.lonEnd];
+  const allOk = coords.every((c) => c && c.status === 'ok');
+  const mapUrl = allOk
+    ? `https://www.google.com/maps/dir/?api=1&origin=${k.latStart.value},${k.lonStart.value}&destination=${k.latEnd.value},${k.lonEnd.value}`
+    : null;
+  $('sec-route').innerHTML = `
+    <div class="panel-head"><h2>Coordenadas / Mapa</h2>
+      ${mapUrl ? `<a class="btn small" href="${esc(mapUrl)}" target="_blank" rel="noopener">Abrir rota no mapa ↗</a>` : ''}
+    </div>
+    <div class="route">
+      <div class="point"><div class="label">Origem</div>
+        <div><span>Lat</span>${esc(display(k.latStart))}</div><div><span>Lon</span>${esc(display(k.lonStart))}</div>
+        ${addressSlot('addr-start', k.latStart, k.lonStart)}</div>
+      <div class="point"><div class="label">Destino</div>
+        <div><span>Lat</span>${esc(display(k.latEnd))}</div><div><span>Lon</span>${esc(display(k.lonEnd))}</div>
+        ${addressSlot('addr-end', k.latEnd, k.lonEnd)}</div>
+    </div>
+    ${mapUrl ? '<div class="minimap" id="route-map">Carregando mapa…</div><p class="note" id="route-map-note"></p>' : ''}
+    ${mapUrl ? '' : '<p class="note">Rota indisponível: há coordenada ausente ou inválida.</p>'}
+    <p class="note">Endereços aproximados, obtidos pelas coordenadas via OpenStreetMap (Nominatim). Requer internet.</p>`;
+  loadAddresses(packet);
+  loadMap(packet);
+}
+
+let leafletPromise = null;
+let routeMap = null;
+
+// Carrega o Leaflet só quando necessário; se falhar, a próxima análise tenta de novo.
+function ensureLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (!leafletPromise) {
+    leafletPromise = new Promise((resolve, reject) => {
+      const css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = LEAFLET_BASE + 'leaflet.min.css';
+      const js = document.createElement('script');
+      js.src = LEAFLET_BASE + 'leaflet.min.js';
+      const cssReady = new Promise((done) => { css.onload = done; css.onerror = done; });
+      js.onload = () => (window.L ? cssReady.then(resolve) : reject(new Error('Leaflet não carregou')));
+      js.onerror = () => reject(new Error('Leaflet não carregou'));
+      setTimeout(() => reject(new Error('tempo esgotado')), MAP_TIMEOUT_MS);
+      document.head.append(css, js);
+    });
+    leafletPromise.catch(() => { leafletPromise = null; });
+  }
+  return leafletPromise;
+}
+
+// Adiciona o fundo do mapa; se as primeiras imagens falharem sem nenhuma carregar, troca para a fonte seguinte.
+function addMapTiles(map, index) {
+  const source = MAP_TILE_SOURCES[index];
+  const layer = L.tileLayer(source.url, source);
+  let loaded = false;
+  let errors = 0;
+  layer.on('tileload', () => { loaded = true; });
+  layer.on('tileerror', () => {
+    errors++;
+    if (loaded || errors < 2 || routeMap !== map) return;
+    layer.off();
+    map.removeLayer(layer);
+    if (index + 1 < MAP_TILE_SOURCES.length) {
+      addMapTiles(map, index + 1);
+    } else if ($('route-map-note')) {
+      $('route-map-note').textContent += ' O fundo do mapa não pôde ser carregado (acesso às imagens bloqueado nesta rede).';
+    }
+  });
+  layer.addTo(map);
+}
+
+function pinIcon(letter, color) {
+  return L.divIcon({
+    className: 'map-pin', iconSize: [26, 36], iconAnchor: [13, 36], tooltipAnchor: [0, -30],
+    html: `<svg width="26" height="36" viewBox="0 0 26 36" aria-hidden="true"><path d="M13 .8C6.3.8.8 6.3.8 13c0 9.3 12.2 22 12.2 22s12.2-12.7 12.2-22C25.2 6.3 19.7.8 13 .8z" fill="${color}" stroke="#fff" stroke-width="1.6"/><text x="13" y="17.5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff" font-family="Arial, sans-serif">${letter}</text></svg>`
+  });
+}
+
+function fetchRoute(from, to) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), MAP_TIMEOUT_MS);
+  const url = `${ROUTE_SERVICE}${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`;
+  return fetch(url, { signal: ctrl.signal })
+    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then((d) => {
+      const route = d && d.routes && d.routes[0];
+      if (!route || !route.geometry || !route.geometry.coordinates.length) throw new Error('sem rota');
+      return { points: route.geometry.coordinates.map((c) => [c[1], c[0]]), km: route.distance / 1000 };
+    })
+    .finally(() => clearTimeout(timer));
+}
+
+// Monta o mini mapa depois que o painel já está na tela; nunca bloqueia nem quebra a análise.
+async function loadMap(packet) {
+  if (!$('route-map')) return;
+  const isCurrent = () => current && current.packet === packet && $('route-map');
+  const k = packet.byKey;
+  const from = [k.latStart.value, k.lonStart.value];
+  const to = [k.latEnd.value, k.lonEnd.value];
+
+  try {
+    await ensureLeaflet();
+  } catch (e) {
+    if (!isCurrent()) return;
+    $('route-map').classList.add('off');
+    $('route-map').textContent = 'Mapa indisponível (sem internet ou acesso externo bloqueado).';
+    return;
+  }
+  if (!isCurrent()) return;
+  if (routeMap) { try { routeMap.remove(); } catch (e) { /* mapa anterior já descartado */ } routeMap = null; }
+
+  const box = $('route-map');
+  const note = $('route-map-note');
+  box.textContent = '';
+  const map = L.map(box, { scrollWheelZoom: false });
+  routeMap = map;
+  addMapTiles(map, 0);
+
+  let framed = [from, to];
+  const fit = (points) => {
+    framed = points;
+    map.invalidateSize();
+    const bounds = L.latLngBounds(points);
+    if (bounds.getNorthEast().equals(bounds.getSouthWest())) map.setView(from, 16);
+    else map.fitBounds(bounds, { padding: [34, 34], maxZoom: 17 });
+  };
+  let line = L.polyline([from, to], { color: '#0E6BA8', weight: 3, dashArray: '6 8', opacity: .8 }).addTo(map);
+  L.marker(from, { icon: pinIcon('O', PIN_COLORS.origin), title: 'Origem' }).addTo(map).bindTooltip('Origem');
+  L.marker(to, { icon: pinIcon('D', PIN_COLORS.destination), title: 'Destino', zIndexOffset: 100 }).addTo(map).bindTooltip('Destino');
+  fit([from, to]);
+  // Reenquadra origem e destino sempre que o tamanho do painel mudar (ex.: endereços carregando, janela redimensionada).
+  if (window.ResizeObserver) {
+    const observer = new ResizeObserver(() => { if (routeMap === map) fit(framed); else observer.disconnect(); });
+    observer.observe(box);
+  }
+  note.textContent = 'O = origem, D = destino. Buscando rota sugerida…';
+
+  try {
+    const route = await fetchRoute(from, to);
+    if (!isCurrent() || routeMap !== map) return;
+    line.remove();
+    line = L.polyline(route.points, { color: '#0E6BA8', weight: 4, opacity: .9 }).addTo(map);
+    fit(route.points.concat([from, to]));
+    note.textContent = `O = origem, D = destino. Rota sugerida por vias (${formatNumber(route.km)} km), calculada pelo OSRM: o pacote só traz os pontos inicial e final, então este não é necessariamente o trajeto percorrido.`;
+  } catch (e) {
+    if (!isCurrent() || routeMap !== map) return;
+    note.textContent = 'O = origem, D = destino. Rota sugerida indisponível: a linha tracejada apenas liga os dois pontos em linha reta.';
+  }
+}
+
+const coordOk = (lat, lon) => !!(lat && lon && lat.status === 'ok' && lon.status === 'ok');
+
+function addressSlot(id, lat, lon) {
+  return coordOk(lat, lon) ? `<div class="addr na" id="${id}">Buscando endereço…</div>` : '';
+}
+
+const addressCache = new Map(); // "lat,lon" -> Promise<string>
+
+function fetchAddress(lat, lon) {
+  const key = `${lat},${lon}`;
+  if (!addressCache.has(key)) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ADDRESS_TIMEOUT_MS);
+    const url = `${ADDRESS_SERVICE}?format=jsonv2&zoom=18&accept-language=pt-BR&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+    const request = fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json' } })
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((d) => { if (!d || !d.display_name) throw new Error('sem endereço'); return d.display_name; })
+      .finally(() => clearTimeout(timer));
+    request.catch(() => addressCache.delete(key)); // falha não fica em cache: a próxima análise tenta de novo
+    addressCache.set(key, request);
+  }
+  return addressCache.get(key);
+}
+
+// Preenche os endereços depois que o painel já está na tela; nunca bloqueia nem quebra a análise.
+async function loadAddresses(packet) {
+  const k = packet.byKey;
+  let requested = false;
+  for (const [id, lat, lon] of [['addr-start', k.latStart, k.lonStart], ['addr-end', k.latEnd, k.lonEnd]]) {
+    if (!coordOk(lat, lon)) continue;
+    const isNew = !addressCache.has(`${lat.value},${lon.value}`);
+    if (isNew && requested) await new Promise((r) => setTimeout(r, ADDRESS_INTERVAL_MS));
+    if (isNew) requested = true;
+    let text = null;
+    try { text = await fetchAddress(lat.value, lon.value); } catch (e) { text = null; }
+    if (!current || current.packet !== packet) return; // outro pacote foi analisado nesse meio-tempo
+    const el = $(id);
+    if (!el) continue;
+    el.textContent = text || 'Endereço indisponível (sem internet ou serviço fora do ar).';
+    el.classList.toggle('na', !text);
+  }
+}
+
+function renderFlags(packet) {
+  const f = packet.byKey.flags;
+  let body;
+  if (f && f.status === 'ok') {
+    body = `<div class="flags">${f.value.map((bit, i) => `<div class="flag"><small>pos. ${i + 1}</small><b>${esc(bit)}</b></div>`).join('')}</div>`;
+  } else {
+    body = `<div class="empty">${esc(display(f))}</div>`;
+  }
+  const note = f && f.status === 'ok'
+    ? '<p class="note">Posições contadas da esquerda para a direita. O significado de cada sinal ainda não foi documentado.</p>' : '';
+  $('sec-flags').innerHTML = `<div class="flags-line"><h2>Flags (campo 12)</h2>${body}</div>${note}`;
+}
+
+// Gráfico de composição (barra empilhada) + linha por faixa com tempo e percentual.
+function renderBandChart(containerId, group) {
+  const el = $(containerId);
+  if (!group.present) {
+    el.innerHTML = `<div class="empty">Nenhum evento de ${esc(group.title.toLowerCase())} (${esc(group.range)}) neste pacote.</div>`;
+    return;
+  }
+  const stack = group.total > 0
+    ? group.bands.filter((b) => b.seconds > 0).map((b) =>
+        `<span style="width:${(b.seconds / group.total) * 100}%;background:${b.color}" title="${esc(b.name)}: ${formatSeconds(b.seconds)} (${formatPercent(b.seconds, group.total)})"></span>`).join('')
+    : '';
+  const rows = group.bands.map((b) => {
+    const pct = group.total > 0 ? (b.seconds / group.total) * 100 : 0;
+    return `<li class="${b.present ? '' : 'absent'}">
+      <span class="sw" style="background:${b.color}"></span>
+      <span class="name"><small>${b.id}</small>${esc(b.name)}</span>
+      <span class="track"><span class="fill" style="width:${pct}%;background:${b.color}"></span></span>
+      <span class="time">${b.present ? formatSeconds(b.seconds) : 'não enviado'}</span>
+      <span class="pct">${b.present ? formatPercent(b.seconds, group.total) : ''}</span>
+    </li>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="stack" role="img" aria-label="Composição do tempo por faixa">${stack}</div>
+    <ul class="bands">${rows}</ul>
+    <div class="chart-foot"><span>Total contabilizado</span><b>${formatSeconds(group.total)}</b></div>
+    ${group.total > 0 ? '' : '<p class="note">Todas as faixas recebidas estão com tempo zero; não há percentual a calcular.</p>'}`;
+}
+
+function renderRPMChart(m)   { renderBandChart('rpm-chart', m.groups.rpm); }
+function renderSpeedChart(m) { renderBandChart('speed-chart', m.groups.speed); }
+
+// Segundos por extenso: 17 -> "17 segundos"; 108 -> "1 minuto e 48 segundos".
+function describeSecondsInWords(totalSeconds) {
+  const t = Math.round(totalSeconds);
+  const units = [[Math.floor(t / 3600), 'hora', 'horas'], [Math.floor((t % 3600) / 60), 'minuto', 'minutos'], [t % 60, 'segundo', 'segundos']];
+  const parts = units.filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
+  if (!parts.length) return '0 segundo';
+  return parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
+}
+
+function checkRow(kind, icon, label, value, sub) {
+  return `<div class="chk-row ${kind}"><span class="ic" aria-hidden="true">${icon}</span><span class="lbl">${esc(label)}</span>
+    <span class="val">${esc(value)}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</div>`;
+}
+
+// Bloco de um grupo: duração do pacote = contabilizado nas faixas + não contabilizado.
+function renderCheckGroup(g, m) {
+  const u = g.unaccounted;
+  const dur = m.duration.ok ? m.duration.seconds : null;
+  const totalLabel = `Total em ${g.title.charAt(0).toLowerCase() + g.title.slice(1)}`;
+  const restLabel = `Tempo não contabilizado — ${g.short}`;
+
+  const counted = g.present
+    ? checkRow('counted', '✓', totalLabel, formatSeconds(g.total), dur !== null ? `${formatPercent(g.total, dur)} da duração do pacote` : '')
+    : checkRow('na', '–', totalLabel, INSUFFICIENT, '');
+
+  let rest;
+  if (!u.ok) rest = checkRow('na', '–', restLabel, INSUFFICIENT, '');
+  else if (u.seconds < -0.5) rest = checkRow('over', '✕', restLabel, `−${formatSeconds(-u.seconds)}`, `os eventos excedem a duração do pacote em ${describeSecondsInWords(-u.seconds)}`);
+  else if (u.seconds > 0.5) rest = checkRow('uncounted', '⚠', restLabel, formatSeconds(u.seconds), `${describeSecondsInWords(u.seconds)} sem classificação`);
+  else rest = checkRow('counted', '✓', restLabel, formatSeconds(0), 'todo o tempo do pacote foi classificado');
+
+  let bar = '';
+  let eq = '';
+  if (u.ok && dur > 0) {
+    const pct = Math.min(100, (g.total / dur) * 100);
+    const restSeconds = Math.max(0, u.seconds);
+    bar = `<div class="chk-bar" role="img" aria-label="${esc(`${formatPercent(g.total, dur)} da duração classificada`)}"><span class="done" style="width:${pct}%"></span></div>
+      <div class="chk-legend"><span><i class="done"></i>${formatSeconds(g.total)} contabilizado</span><span><i class="rest"></i>${formatSeconds(restSeconds)} não contabilizado</span></div>`;
+    if (u.seconds >= -0.5) {
+      eq = `<div class="chk-eq">Duração do pacote <b>${formatSeconds(dur)}</b> = <b>${formatSeconds(g.total)}</b> contabilizado + <b>${formatSeconds(restSeconds)}</b> não contabilizado</div>`;
+    }
+  }
+  return `<div class="chk-group"><div class="chk-title">${esc(g.short)}</div>${bar}${counted}${rest}${eq}</div>`;
+}
+
+function renderChecks(packet, m) {
+  const fact = (label, value, cls) => `<div class="chk-fact"><div class="label">${esc(label)}</div><div class="v ${cls || ''}">${esc(value)}</div></div>`;
+  const declared = m.declaredCount === null ? INSUFFICIENT : String(m.declaredCount);
+  const mismatch = m.declaredCount !== null && m.declaredCount !== packet.events.list.length;
+  $('sec-checks').innerHTML = `
+    <div class="chk-facts">
+      ${fact('Duração total do pacote', m.duration.ok ? formatSeconds(m.duration.seconds) : m.duration.reason, m.duration.ok ? '' : 'na')}
+      ${fact('Eventos declarados (campo 19)', declared, m.declaredCount === null ? 'na' : (mismatch ? 'alert' : ''))}
+      ${fact('Eventos recebidos (campo 20)', `${m.receivedCount}${m.discardedCount ? ` válidos + ${m.discardedCount} descartado(s)` : ''}`, mismatch ? 'alert' : '')}
+    </div>
+    <div class="chk-groups">${Object.values(m.groups).map((g) => renderCheckGroup(g, m)).join('')}</div>`;
+}
+
+function renderRawPacket(packet) {
+  $('sec-raw').innerHTML = esc(packet.raw).replace(/;/g, '<span class="sep">;</span>');
+}
+
+function renderTechnicalData(packet) {
+  const fieldRows = packet.fields.map((f) => `
+    <tr class="st-${f.status}">
+      <td class="idx">${f.index}</td>
+      <td>${esc(f.name)}</td>
+      <td class="rawv">${f.raw === '' ? '—' : esc(f.raw)}</td>
+      <td class="interp">${esc(f.display)}</td>
+    </tr>`).join('');
+
+  const eventRows = packet.events.list.map((e) => `
+    <tr class="${e.valid ? (e.def ? '' : 'st-undefined') : 'st-invalid'}">
+      <td class="idx">${e.id === null ? '—' : e.id}</td>
+      <td class="rawv">${esc(e.rawToken)}</td>
+      <td class="interp">${esc(e.valid ? (e.def ? `${e.def.name} (${EVENT_GROUPS[e.def.group].title})` : 'Não definido') : e.reason)}</td>
+      <td class="rawv">${e.valid ? `${esc(e.seconds)} s` : '—'}</td>
+      <td class="rawv">${e.valid ? formatSeconds(e.seconds) : '—'}</td>
+    </tr>`).join('');
+
+  $('sec-technical').innerHTML = `
+    <div class="table-wrap"><table>
+      <thead><tr><th class="idx">Índice</th><th>Campo</th><th>Valor bruto</th><th>Interpretação</th></tr></thead>
+      <tbody>${fieldRows}</tbody>
+    </table></div>
+    <h3>Eventos do campo 20</h3>
+    ${eventRows ? `<div class="table-wrap"><table>
+      <thead><tr><th class="idx">Evento</th><th>Valor bruto</th><th>Interpretação</th><th>Segundos</th><th>Tempo</th></tr></thead>
+      <tbody>${eventRows}</tbody>
+    </table></div>` : '<div class="empty">Nenhum evento recebido.</div>'}`;
+}
+
+function renderDashboard(packet, m) {
+  renderIdentity(packet);
+  renderSummary(packet, m);
+  renderRoute(packet);
+  renderFlags(packet);
+  renderRPMChart(m);
+  renderSpeedChart(m);
+  renderChecks(packet, m);
+  renderRawPacket(packet);
+  renderTechnicalData(packet);
+}
+
+function analyze() {
+  const packet = parsePacket($('packet-input').value);
+  if (packet.errors.length) {
+    current = null;
+    $('output').hidden = true;
+    renderMessages(packet.errors, []);
+    return;
+  }
+  const metrics = computeMetrics(packet);
+  current = { packet, metrics };
+  renderAlerts(collectAlerts(packet, metrics));
+  renderDashboard(packet, metrics);
+  $('output').hidden = false;
+}
+
+function clearAll() {
+  current = null;
+  $('packet-input').value = '';
+  $('messages').innerHTML = '';
+  $('output').hidden = true;
+  $('packet-input').focus();
+}
+
+function copyText(text, button) {
+  const done = () => {
+    const original = button.textContent;
+    button.textContent = 'Copiado ✓';
+    setTimeout(() => { button.textContent = original; }, 1500);
+  };
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { alert('Não foi possível copiar automaticamente.'); }
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, fallback);
+  } else {
+    fallback();
+  }
+}
+
+function downloadJson() {
+  if (!current) return;
+  const data = JSON.stringify(buildExportObject(current.packet, current.metrics), null, 2);
+  const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+  const a = document.createElement('a');
+  const imei = current.packet.byKey.imei ? current.packet.byKey.imei.raw : 'pacote';
+  a.href = url;
+  a.download = `pacote-${String(imei).replace(/[^\w-]/g, '') || 'telemetria'}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function init() {
+  $('btn-analyze').addEventListener('click', analyze);
+  $('btn-clear').addEventListener('click', clearAll);
+  $('btn-example').addEventListener('click', () => { $('packet-input').value = EXAMPLE_PACKET; analyze(); });
+  $('btn-copy-raw').addEventListener('click', (e) => current && copyText(current.packet.raw, e.currentTarget));
+  $('btn-copy-summary').addEventListener('click', (e) => current && copyText(buildSummaryText(current.packet, current.metrics), e.currentTarget));
+  $('btn-download-json').addEventListener('click', downloadJson);
+  $('packet-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) analyze(); });
+
+  $('packet-input').value = EXAMPLE_PACKET;
+  analyze();
+}
+
+if (typeof document !== 'undefined') {
+  init();
+} else if (typeof module !== 'undefined') {
+  module.exports = { parsePacket, computeMetrics, parseEvents, formatSeconds, formatTimestamp, calculateDuration, buildSummaryText, buildExportObject, EXAMPLE_PACKET };
+}
+</script>
+</body>
+</html>
